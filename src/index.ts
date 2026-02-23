@@ -52,7 +52,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description:
           'Search for computers (managed agents) in ConnectWise Automate. ' +
           'Use the condition parameter to filter results (e.g. "ClientId=5", ' +
-          '"OperatingSystem like \'%Windows 10%\'", "ComputerName=\'DESKTOP-ABC123\'"). ' +
+          '"OperatingSystemName like \'%Windows 10%\'", "ComputerName=\'DESKTOP-ABC123\'", "Type=\'Server\'"). ' +
+          'Returns compact records by default (strips large port/IRQ arrays). ' +
           'Supports pagination and sorting.',
         inputSchema: {
           type: 'object',
@@ -61,7 +62,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description:
                 'Automate filter condition (optional). Examples: "ClientId=5", ' +
-                '"OperatingSystem like \'%Server%\'", "ComputerName=\'mypc\'"',
+                '"OperatingSystemName like \'%Server%\'", "ComputerName=\'mypc\'", "Type=\'Server\'"',
             },
             pageSize: {
               type: 'number',
@@ -77,6 +78,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: 'string',
               description:
                 'Field to sort by with optional direction (e.g. "ComputerName asc", "LastContact desc")',
+            },
+            compact: {
+              type: 'boolean',
+              description:
+                'Return compact records (default: true). Set to false to include raw port/IRQ/DMA arrays.',
+              default: true,
             },
           },
         },
@@ -94,6 +101,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ['computerId'],
+        },
+      },
+
+      {
+        name: 'get_computers_by_client',
+        description:
+          'Search for computers belonging to a specific client by client name (partial match). ' +
+          'Convenience wrapper — no need to look up a client ID first. ' +
+          'If multiple clients match the name, returns the list of matches so you can be more specific.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            clientName: {
+              type: 'string',
+              description: 'Client name to search for (partial match, e.g. "Northrop" or "Westside")',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of computers to return (default: 25, max: 1000)',
+              default: 25,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by (e.g. "ComputerName asc", "LastContact desc")',
+            },
+          },
+          required: ['clientName'],
         },
       },
 
@@ -282,6 +321,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+
+      {
+        name: 'get_stale_computers',
+        description:
+          'Find computers whose Automate agent has not checked in for more than a given number of days. ' +
+          'Similar to get_offline_computers but with a longer default horizon (30 days) and an optional ' +
+          'type filter — useful for identifying truly dead/retired agents vs. machines that are just ' +
+          'temporarily offline. Use typeFilter to limit to "Workstation" or "Server".',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            daysOld: {
+              type: 'number',
+              description: 'Flag computers not checked in for this many days (default: 30)',
+              default: 30,
+            },
+            clientId: {
+              type: 'number',
+              description: 'Limit to a specific client ID (optional)',
+            },
+            typeFilter: {
+              type: 'string',
+              description: 'Limit to a specific computer type: "Workstation" or "Server" (optional)',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 100)',
+              default: 100,
+            },
+          },
+        },
+      },
     ],
   };
 });
@@ -301,7 +372,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           params.condition,
           params.pageSize,
           params.page,
-          params.orderBy
+          params.orderBy,
+          params.compact !== false   // default true unless explicitly set to false
         );
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -310,6 +382,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'get_computer': {
         const result = await automateClient.getComputerById(params.computerId as number);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_computers_by_client': {
+        const result = await automateClient.getComputersByClient(
+          params.clientName as string,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };
@@ -387,6 +471,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await automateClient.getOfflineComputers(
           params.daysOffline as number | undefined,
           params.clientId as number | undefined,
+          params.pageSize as number | undefined
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_stale_computers': {
+        const result = await automateClient.getStaleComputers(
+          params.daysOld as number | undefined,
+          params.clientId as number | undefined,
+          params.typeFilter as string | undefined,
           params.pageSize as number | undefined
         );
         return {

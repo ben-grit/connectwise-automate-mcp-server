@@ -131,14 +131,55 @@ export class AutomateClient {
     condition?: string,
     pageSize: number = 25,
     page: number = 1,
-    orderBy?: string
+    orderBy?: string,
+    compact: boolean = true
   ): Promise<any> {
-    return this.get('/Computers', condition, pageSize, page, orderBy);
+    const data = await this.get('/Computers', condition, pageSize, page, orderBy);
+    if (!compact) return data;
+    if (Array.isArray(data)) return data.map(compactComputer);
+    return data;
   }
 
   async getComputerById(id: number): Promise<any> {
     const response = await this.httpClient.get(`/Computers/${id}`);
     return response.data;
+  }
+
+  /**
+   * Find computers by client name (partial match). Resolves the client name to
+   * an ID first, then returns computers for that client in compact form.
+   */
+  async getComputersByClient(
+    clientName: string,
+    pageSize: number = 25,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    // Resolve client name → ID
+    const clientData = await this.getClients(`Name like '%${clientName}%'`, 20);
+    const clientList: any[] = Array.isArray(clientData) ? clientData : (clientData?.items ?? []);
+
+    if (clientList.length === 0) {
+      return { error: `No clients found matching "${clientName}"`, computers: [] };
+    }
+
+    if (clientList.length > 1) {
+      // Ambiguous — return the matches so Claude can ask the user to be more specific
+      return {
+        multipleClientsFound: clientList.map((c: any) => ({ Id: c.Id, Name: c.Name })),
+        message: `Found ${clientList.length} clients matching "${clientName}". Use a more specific name or pass a clientId directly to get_computers.`,
+      };
+    }
+
+    const client = clientList[0];
+    const data = await this.get('/Computers', `ClientId=${client.Id}`, pageSize, page, orderBy);
+    const computers: any[] = Array.isArray(data) ? data : (data?.items ?? []);
+
+    return {
+      client: { Id: client.Id, Name: client.Name },
+      totalReturned: computers.length,
+      computers: computers.map(compactComputer),
+    };
   }
 
   // ─── Clients ───────────────────────────────────────────────────────────────
@@ -209,15 +250,12 @@ export class AutomateClient {
       const clientName: string = c.Client?.Name ?? c.ClientName ?? `Client ${c.ClientId ?? 'Unknown'}`;
       byClient[clientName] = (byClient[clientName] ?? 0) + 1;
 
-      // OS type — normalise to a short label
-      const os: string = normaliseOS(c.OperatingSystem ?? c.OS ?? '');
+      // OS type — field is OperatingSystemName in the Automate API
+      const os: string = normaliseOS(c.OperatingSystemName ?? '');
       byOS[os] = (byOS[os] ?? 0) + 1;
 
-      // Online status — Automate exposes Status: 1 = online, or IsOnline boolean
-      const isOnline =
-        c.Status === 1 ||
-        c.IsOnline === true ||
-        c.ComputerStatus === 'Online';
+      // Online status — Automate returns Status as a string: "Online" or "Offline"
+      const isOnline = c.Status === 'Online';
       if (isOnline) online++;
       else offline++;
     }
@@ -246,11 +284,47 @@ export class AutomateClient {
     if (clientId !== undefined) parts.push(`ClientId=${clientId}`);
     const condition = parts.join(' AND ');
 
-    return this.get('/Computers', condition, pageSize, 1, 'LastContact asc');
+    const data = await this.get('/Computers', condition, pageSize, 1, 'LastContact asc');
+    const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
+    return list.map(compactComputer);
+  }
+
+  /**
+   * Find computers whose agent hasn't checked in for more than `daysOld` days.
+   * Similar to getOfflineComputers but with a longer default horizon and type filter —
+   * useful for identifying truly stale/dead agents rather than just currently-offline machines.
+   */
+  async getStaleComputers(
+    daysOld: number = 30,
+    clientId?: number,
+    typeFilter?: string,
+    pageSize: number = 100
+  ): Promise<any[]> {
+    const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
+    const cutoffStr = cutoff.toISOString().replace('T', ' ').substring(0, 19);
+
+    const parts: string[] = [`LastContact<'${cutoffStr}'`];
+    if (clientId !== undefined) parts.push(`ClientId=${clientId}`);
+    if (typeFilter) parts.push(`Type='${typeFilter}'`);
+    const condition = parts.join(' AND ');
+
+    const data = await this.get('/Computers', condition, pageSize, 1, 'LastContact asc');
+    const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
+    return list.map(compactComputer);
   }
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
+
+/**
+ * Strip large noisy arrays from a computer record, keeping the fields
+ * that are analytically useful and avoiding token overflow on list queries.
+ */
+function compactComputer(c: any): any {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { OpenPortsTCP, OpenPortsUDP, IRQ, Address, DMA, UserAccounts, PowerProfiles, ...rest } = c;
+  return rest;
+}
 
 function normaliseOS(raw: string): string {
   const s = raw.toLowerCase();
