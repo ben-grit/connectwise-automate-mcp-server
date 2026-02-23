@@ -102,21 +102,28 @@ export class AutomateClient {
     condition?: string,
     pageSize: number = 25,
     page: number = 1,
-    orderBy?: string
+    orderBy?: string,
+    includedFields?: string[]
   ): Promise<any> {
-    const params: Record<string, string | number> = { pageSize, page };
-    if (condition) params['condition'] = condition;
-    if (orderBy) params['orderBy'] = orderBy;
-    const response = await this.httpClient.get(endpoint, { params });
+    // Use URLSearchParams so repeated options.includedFields params serialise correctly
+    const sp = new URLSearchParams();
+    sp.set('pageSize', String(pageSize));
+    sp.set('page', String(page));
+    if (condition) sp.set('condition', condition);
+    if (orderBy) sp.set('orderBy', orderBy);
+    if (includedFields?.length) {
+      for (const f of includedFields) sp.append('options.includedFields', f);
+    }
+    const response = await this.httpClient.get(endpoint, { params: sp });
     return response.data;
   }
 
   /** Fetch ALL pages from a list endpoint (for analytics). */
-  async getAllPages(endpoint: string, condition?: string): Promise<any[]> {
+  async getAllPages(endpoint: string, condition?: string, includedFields?: string[]): Promise<any[]> {
     const all: any[] = [];
     let page = 1;
     while (true) {
-      const batch = await this.get(endpoint, condition, 1000, page);
+      const batch = await this.get(endpoint, condition, 1000, page, undefined, includedFields);
       const items: any[] = Array.isArray(batch) ? batch : (batch?.items ?? []);
       all.push(...items);
       if (items.length < 1000) break;
@@ -134,7 +141,8 @@ export class AutomateClient {
     orderBy?: string,
     compact: boolean = true
   ): Promise<any> {
-    const data = await this.get('/Computers', condition, pageSize, page, orderBy);
+    const included = compact ? COMPACT_FIELDS : undefined;
+    const data = await this.get('/Computers', condition, pageSize, page, orderBy, included);
     if (!compact) return data;
     if (Array.isArray(data)) return data.map(compactComputer);
     return data;
@@ -172,7 +180,7 @@ export class AutomateClient {
     }
 
     const client = clientList[0];
-    const data = await this.get('/Computers', `ClientId=${client.Id}`, pageSize, page, orderBy);
+    const data = await this.get('/Computers', `ClientId=${client.Id}`, pageSize, page, orderBy, COMPACT_FIELDS);
     const computers: any[] = Array.isArray(data) ? data : (data?.items ?? []);
 
     return {
@@ -238,7 +246,7 @@ export class AutomateClient {
    */
   async getComputersSummary(clientId?: number): Promise<any> {
     const condition = clientId !== undefined ? `ClientId=${clientId}` : undefined;
-    const computers = await this.getAllPages('/Computers', condition);
+    const computers = await this.getAllPages('/Computers', condition, SUMMARY_FIELDS);
 
     const byClient: Record<string, number> = {};
     const byOS: Record<string, number> = {};
@@ -286,7 +294,7 @@ export class AutomateClient {
     const condition = parts.join(' AND ');
 
     // Fetch up to 1000 offline computers then filter by date client-side
-    const data = await this.get('/Computers', condition, 1000, 1, 'RemoteAgentLastContact asc');
+    const data = await this.get('/Computers', condition, 1000, 1, 'RemoteAgentLastContact asc', COMPACT_FIELDS);
     const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
 
     return list
@@ -317,7 +325,7 @@ export class AutomateClient {
     const condition = parts.join(' AND ');
 
     // Fetch up to 2000 offline computers then filter by date client-side
-    const data = await this.get('/Computers', condition, 2000, 1, 'RemoteAgentLastContact asc');
+    const data = await this.get('/Computers', condition, 2000, 1, 'RemoteAgentLastContact asc', COMPACT_FIELDS);
     const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
 
     return list
@@ -333,13 +341,32 @@ export class AutomateClient {
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
 /**
- * Strip large noisy arrays from a computer record, keeping the fields
- * that are analytically useful and avoiding token overflow on list queries.
+ * Whitelist of fields requested for regular computer list queries via options.includedFields.
+ * Keeps analytically useful fields and drops everything else, reducing per-record size
+ * from ~60+ fields down to ~20. get_computer (single record) always returns all fields.
+ */
+const COMPACT_FIELDS = [
+  'Id', 'ComputerName', 'Client', 'Location', 'Type',
+  'OperatingSystemName', 'Status', 'RemoteAgentLastContact',
+  'LastUserName', 'LoggedInUsers', 'LocalIPAddress', 'Comment',
+  'IsRebootNeeded', 'IsVirtualMachine', 'IsMaintenanceModeEnabled',
+  'TotalMemory', 'FreeMemory', 'CpuUsage', 'LastHeartbeat',
+  'SerialNumber', 'AssetTag', 'VirusScanner', 'IsHeartbeatRunning',
+];
+
+/**
+ * Minimal fields needed for getComputersSummary aggregation.
+ * Reduces each record to just 3 fields when fetching thousands of computers.
+ */
+const SUMMARY_FIELDS = ['Client', 'Status', 'OperatingSystemName'];
+
+/**
+ * Client-side fallback — mirrors COMPACT_FIELDS as a whitelist.
+ * Applied after server response in case options.includedFields is not honoured.
  */
 function compactComputer(c: any): any {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { OpenPortsTCP, OpenPortsUDP, IRQ, Address, DMA, UserAccounts, PowerProfiles, ...rest } = c;
-  return rest;
+  const keep = new Set(COMPACT_FIELDS);
+  return Object.fromEntries(Object.entries(c).filter(([k]) => keep.has(k)));
 }
 
 function normaliseOS(raw: string): string {
