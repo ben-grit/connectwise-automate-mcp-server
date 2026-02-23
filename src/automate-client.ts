@@ -270,7 +270,9 @@ export class AutomateClient {
   }
 
   /**
-   * Returns computers that haven't checked in within the last `daysOffline` days.
+   * Returns computers that have not checked in within the last `daysOffline` days.
+   * Fetches offline computers (Status='Offline') and filters by RemoteAgentLastContact
+   * client-side, since the API does not support date comparisons in conditions.
    */
   async getOfflineComputers(
     daysOffline: number = 1,
@@ -278,21 +280,28 @@ export class AutomateClient {
     pageSize: number = 100
   ): Promise<any[]> {
     const cutoff = new Date(Date.now() - daysOffline * 24 * 60 * 60 * 1000);
-    const cutoffStr = cutoff.toISOString().replace('T', ' ').substring(0, 19);
 
-    const parts: string[] = [`LastContact<'${cutoffStr}'`];
+    const parts: string[] = [`Status='Offline'`];
     if (clientId !== undefined) parts.push(`ClientId=${clientId}`);
     const condition = parts.join(' AND ');
 
-    const data = await this.get('/Computers', condition, pageSize, 1, 'LastContact asc');
+    // Fetch up to 1000 offline computers then filter by date client-side
+    const data = await this.get('/Computers', condition, 1000, 1, 'RemoteAgentLastContact asc');
     const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
-    return list.map(compactComputer);
+
+    return list
+      .filter((c) => {
+        const lastContact = c.RemoteAgentLastContact ? new Date(c.RemoteAgentLastContact) : null;
+        return lastContact && lastContact < cutoff;
+      })
+      .slice(0, pageSize)
+      .map(compactComputer);
   }
 
   /**
-   * Find computers whose agent hasn't checked in for more than `daysOld` days.
-   * Similar to getOfflineComputers but with a longer default horizon and type filter —
-   * useful for identifying truly stale/dead agents rather than just currently-offline machines.
+   * Find computers whose agent has not checked in for more than `daysOld` days.
+   * Similar to getOfflineComputers but with a longer default horizon (30 days) and
+   * an optional type filter — useful for identifying truly dead/retired agents.
    */
   async getStaleComputers(
     daysOld: number = 30,
@@ -301,16 +310,23 @@ export class AutomateClient {
     pageSize: number = 100
   ): Promise<any[]> {
     const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
-    const cutoffStr = cutoff.toISOString().replace('T', ' ').substring(0, 19);
 
-    const parts: string[] = [`LastContact<'${cutoffStr}'`];
+    const parts: string[] = [`Status='Offline'`];
     if (clientId !== undefined) parts.push(`ClientId=${clientId}`);
     if (typeFilter) parts.push(`Type='${typeFilter}'`);
     const condition = parts.join(' AND ');
 
-    const data = await this.get('/Computers', condition, pageSize, 1, 'LastContact asc');
+    // Fetch up to 2000 offline computers then filter by date client-side
+    const data = await this.get('/Computers', condition, 2000, 1, 'RemoteAgentLastContact asc');
     const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
-    return list.map(compactComputer);
+
+    return list
+      .filter((c) => {
+        const lastContact = c.RemoteAgentLastContact ? new Date(c.RemoteAgentLastContact) : null;
+        return lastContact && lastContact < cutoff;
+      })
+      .slice(0, pageSize)
+      .map(compactComputer);
   }
 }
 
