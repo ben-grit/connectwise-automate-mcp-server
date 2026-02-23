@@ -310,6 +310,71 @@ export class AutomateClient {
   }
 
   /**
+   * Check a list of computer names against Automate in bulk.
+   * For each name, returns whether an agent exists, its status, last contact, and client.
+   */
+  async batchCheckComputers(
+    names: string[]
+  ): Promise<{ results: Record<string, any>; summary: { found: number; notFound: number; online: number; offline: number } }> {
+    // Build an OR condition: ComputerName='name1' OR ComputerName='name2' ...
+    // Automate API doesn't support OR in conditions, so we fetch all and filter client-side.
+    // To keep it efficient, fetch computers matching any of the names using multiple calls if needed.
+    const results: Record<string, any> = {};
+    const notFoundNames = new Set(names.map(n => n.toUpperCase()));
+
+    // Batch into groups of 10 names for parallel API calls
+    const batchSize = 10;
+    for (let i = 0; i < names.length; i += batchSize) {
+      const batch = names.slice(i, i + batchSize);
+      const promises = batch.map(async (name) => {
+        try {
+          const data = await this.get('/Computers', `ComputerName='${name}'`, 5);
+          const list: any[] = Array.isArray(data) ? data : (data?.items ?? []);
+          if (list.length > 0) {
+            const c = list[0];
+            notFoundNames.delete(name.toUpperCase());
+            results[name] = {
+              found: true,
+              computerId: c.Id,
+              computerName: c.ComputerName,
+              status: c.Status,
+              lastContact: c.RemoteAgentLastContact,
+              client: c.Client?.Name ?? `Client ${c.ClientId ?? 'Unknown'}`,
+              type: c.Type,
+              os: c.OperatingSystemName ?? '',
+            };
+          } else {
+            results[name] = { found: false };
+          }
+        } catch {
+          results[name] = { found: false, error: 'lookup failed' };
+        }
+      });
+      await Promise.all(promises);
+    }
+
+    // Fill in any names not yet in results
+    for (const name of names) {
+      if (!results[name]) {
+        results[name] = { found: false };
+      }
+    }
+
+    const found = Object.values(results).filter((r: any) => r.found).length;
+    const online = Object.values(results).filter((r: any) => r.found && r.status === 'Online').length;
+
+    return {
+      results,
+      summary: {
+        found,
+        notFound: names.length - found,
+        online,
+        offline: found - online,
+      },
+    };
+  }
+
+  /**
    * Find computers whose agent has not checked in for more than `daysOld` days.
    * Similar to getOfflineComputers but with a longer default horizon (30 days) and
    * an optional type filter — useful for identifying truly dead/retired agents.

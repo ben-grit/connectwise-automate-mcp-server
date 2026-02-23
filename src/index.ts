@@ -51,8 +51,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: 'get_computers',
         description:
           'Search for computers (managed agents) in ConnectWise Automate. ' +
-          'Use the condition parameter to filter results (e.g. "ClientId=5", ' +
-          '"OperatingSystemName like \'%Windows 10%\'", "ComputerName=\'DESKTOP-ABC123\'", "Type=\'Server\'"). ' +
+          'Use the condition parameter to filter results (e.g. ' +
+          '"ComputerName=\'DESKTOP-ABC123\'", "OperatingSystemName like \'%Windows 10%\'", "Type=\'Server\'"). ' +
+          'To filter by client/company, use get_computers_by_client instead (ClientId conditions are unreliable). ' +
           'Returns compact records by default (strips large port/IRQ arrays). ' +
           'Supports pagination and sorting.',
         inputSchema: {
@@ -61,8 +62,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             condition: {
               type: 'string',
               description:
-                'Automate filter condition (optional). Examples: "ClientId=5", ' +
-                '"OperatingSystemName like \'%Server%\'", "ComputerName=\'mypc\'", "Type=\'Server\'"',
+                'Automate filter condition (optional). Examples: ' +
+                '"ComputerName=\'mypc\'", "OperatingSystemName like \'%Server%\'", "Type=\'Server\'". ' +
+                'NOTE: Do not use ClientId here — use the get_computers_by_client tool for client-based filtering.',
             },
             pageSize: {
               type: 'number',
@@ -353,6 +355,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      // ── Cross-reference ────────────────────────────────────────────────────
+      {
+        name: 'batch_check_computers',
+        description:
+          'Check a list of computer names against Automate in a single call. ' +
+          'For each name, returns whether an agent exists, its status (Online/Offline), ' +
+          'last contact time, and client name. Designed for bulk cross-referencing ' +
+          'PSA configurations against Automate agents.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerNames: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                'List of computer/hostname names to look up (e.g. ["WKS-001", "DESKTOP-ABC"]). Max 50 per call.',
+            },
+          },
+          required: ['computerNames'],
+        },
+      },
     ],
   };
 });
@@ -485,6 +508,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           params.typeFilter as string | undefined,
           params.pageSize as number | undefined
         );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // ── Cross-reference ──────────────────────────────────────────────────────
+      case 'batch_check_computers': {
+        const names: string[] = params.computerNames as string[];
+        if (!names || names.length === 0) {
+          throw new Error('computerNames array is required and must not be empty');
+        }
+        if (names.length > 50) {
+          throw new Error('Maximum 50 computer names per call');
+        }
+        const result = await automateClient.batchCheckComputers(names);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };
