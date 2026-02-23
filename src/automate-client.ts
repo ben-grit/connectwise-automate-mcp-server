@@ -4,6 +4,7 @@ export interface AutomateConfig {
   serverUrl: string;        // e.g. "https://yourcompany.hostedrmm.com"
   username: string;
   password: string;
+  clientId: string;         // ConnectWise developer clientId (same as PSA clientId)
   twoFactorPasscode?: string;
 }
 
@@ -29,7 +30,10 @@ export class AutomateClient {
 
     this.httpClient = axios.create({
       baseURL: `${this.config.serverUrl}/cwa/api/v1`,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'clientId': this.config.clientId,
+      },
     });
 
     // Request interceptor: inject Bearer token before every request

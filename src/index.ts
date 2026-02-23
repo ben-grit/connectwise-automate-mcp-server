@@ -13,12 +13,13 @@ const config: AutomateConfig = {
   serverUrl: process.env.AUTOMATE_SERVER_URL || '',
   username: process.env.AUTOMATE_USERNAME || '',
   password: process.env.AUTOMATE_PASSWORD || '',
+  clientId: process.env.AUTOMATE_CLIENT_ID || '',
   twoFactorPasscode: process.env.AUTOMATE_2FA_PASSCODE,
 };
 
-if (!config.serverUrl || !config.username || !config.password) {
+if (!config.serverUrl || !config.username || !config.password || !config.clientId) {
   console.error('ERROR: Missing required ConnectWise Automate credentials in environment variables');
-  console.error('Required: AUTOMATE_SERVER_URL, AUTOMATE_USERNAME, AUTOMATE_PASSWORD');
+  console.error('Required: AUTOMATE_SERVER_URL, AUTOMATE_USERNAME, AUTOMATE_PASSWORD, AUTOMATE_CLIENT_ID');
   console.error('Optional: AUTOMATE_2FA_PASSCODE');
   process.exit(1);
 }
