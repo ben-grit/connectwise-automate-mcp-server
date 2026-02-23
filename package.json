@@ -1,0 +1,20 @@
+{
+  "name": "connectwise-automate-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for ConnectWise Automate (RMM) — read-only access to computers, clients, locations and groups",
+  "type": "module",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node build/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "axios": "^1.7.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}
