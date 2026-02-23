@@ -13,8 +13,16 @@ Useful params on list endpoints:
 - `condition` — SQL-like filter e.g. `Status='Offline'`, `Type='Server'`, `ClientId=5`
 - `pageSize` / `page` — pagination
 - `orderBy` — e.g. `RemoteAgentLastContact asc`
-- `options.includedFields` — array of field names to include (server-side projection)
-- `options.excludedFields` — array of field names to exclude
+- `options.includedFields` — array of field names to include (server-side projection) **⚠️ silently ignored — see below**
+- `options.excludedFields` — array of field names to exclude **⚠️ silently ignored — see below**
+
+## Known Field Projection Quirks
+
+`options.includedFields` and `options.excludedFields` appear in the OpenAPI spec but are **silently ignored** by this server implementation — all 71 fields are always returned regardless. Tested both comma-separated single value and repeated params:
+- Repeated params (`?options.includedFields=A&options.includedFields=B`): 400 "An item with the same key has already been added."
+- Comma-separated (`?options.includedFields=A,B`): Accepted (200) but all fields returned anyway.
+
+**Workaround**: Use client-side `compactComputer()` whitelist (23 fields) after receiving the response.
 
 ## Known Condition Field Quirks
 - `Status='Offline'` ✅ works
