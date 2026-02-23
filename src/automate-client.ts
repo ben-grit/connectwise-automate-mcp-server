@@ -241,6 +241,8 @@ export class AutomateClient {
     const computers = await this.getAllPages('/Computers', condition);
 
     const byClient: Record<string, number> = {};
+    const byClientWorkstations: Record<string, number> = {};
+    const byClientServers: Record<string, number> = {};
     const byOS: Record<string, number> = {};
     let online = 0;
     let offline = 0;
@@ -249,6 +251,13 @@ export class AutomateClient {
       // Client name
       const clientName: string = c.Client?.Name ?? c.ClientName ?? `Client ${c.ClientId ?? 'Unknown'}`;
       byClient[clientName] = (byClient[clientName] ?? 0) + 1;
+
+      // Type breakdown (Workstation vs Server)
+      if (c.Type === 'Server') {
+        byClientServers[clientName] = (byClientServers[clientName] ?? 0) + 1;
+      } else {
+        byClientWorkstations[clientName] = (byClientWorkstations[clientName] ?? 0) + 1;
+      }
 
       // OS type — field is OperatingSystemName in the Automate API
       const os: string = normaliseOS(c.OperatingSystemName ?? '');
@@ -265,6 +274,8 @@ export class AutomateClient {
       online,
       offline,
       byClient,
+      byClientWorkstations,
+      byClientServers,
       byOS,
     };
   }
