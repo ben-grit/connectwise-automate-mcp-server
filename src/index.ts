@@ -107,6 +107,47 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
 
       {
+        name: 'get_computer_software',
+        description:
+          'Get installed software/applications for a specific computer by its ID. ' +
+          'Returns application name, version, install date, and size. ' +
+          'Use nameFilter for quick partial-match searches (e.g. "Chrome", "Adobe"). ' +
+          'Useful for auditing installed software or planning replacement computer builds.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to retrieve software for',
+            },
+            nameFilter: {
+              type: 'string',
+              description:
+                'Filter software by name (partial match, e.g. "Chrome", "Adobe", "Office"). ' +
+                'Convenience shortcut that builds a Name like condition.',
+            },
+            condition: {
+              type: 'string',
+              description:
+                'Raw Automate condition for advanced filtering (optional). ' +
+                'Example: "Name like \'%Visual Studio%\'"',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 200)',
+              default: 200,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
+      {
         name: 'get_computers_by_client',
         description:
           'Search for computers belonging to a specific client by client name (partial match). ' +
@@ -405,6 +446,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'get_computer': {
         const result = await automateClient.getComputerById(params.computerId as number);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_computer_software': {
+        const conditions: string[] = [];
+        if (params.nameFilter) {
+          conditions.push(`Name like '%${params.nameFilter}%'`);
+        }
+        if (params.condition) {
+          conditions.push(params.condition);
+        }
+        const condition = conditions.length > 0 ? conditions.join(' AND ') : undefined;
+        const result = await automateClient.getComputerSoftware(
+          params.computerId as number,
+          condition,
+          params.pageSize,
+          params.page
+        );
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };

@@ -145,6 +145,20 @@ export class AutomateClient {
     return response.data;
   }
 
+  async getComputerSoftware(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 200,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    const params: Record<string, string | number> = { pageSize, page };
+    if (condition) params['condition'] = condition;
+    if (orderBy) params['orderBy'] = orderBy;
+    const response = await this.httpClient.get(`/Computers/${computerId}/Software`, { params });
+    return response.data;
+  }
+
   /**
    * Find computers by client name (partial match). Resolves the client name to
    * an ID first, then returns computers for that client in compact form.
