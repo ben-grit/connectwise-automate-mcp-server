@@ -244,6 +244,52 @@ export class AutomateClient {
     return response.data;
   }
 
+  // ─── Patching ──────────────────────────────────────────────────────────────
+
+  async getPatchingStats(computerId: number): Promise<any> {
+    const response = await this.httpClient.get(`/Computers/${computerId}/PatchingStats`);
+    return response.data;
+  }
+
+  async getMicrosoftUpdates(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 100,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    const data = await this.get(`/Computers/${computerId}/MicrosoftUpdates`, condition, pageSize, page, orderBy);
+    if (Array.isArray(data)) return data.map(compactMicrosoftUpdate);
+    return data;
+  }
+
+  async getPatchJobs(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 25,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    return this.get(`/Computers/${computerId}/PatchJobs`, condition, pageSize, page, orderBy);
+  }
+
+  async getThirdPartyPatches(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 100,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    const data = await this.get(`/Computers/${computerId}/ThirdPartyPatches`, condition, pageSize, page, orderBy);
+    if (Array.isArray(data)) return data.map(compactThirdPartyPatch);
+    return data;
+  }
+
+  async getEffectivePatchingPolicy(computerId: number): Promise<any> {
+    const response = await this.httpClient.get(`/Computers/${computerId}/EffectivePatchingPolicy`);
+    return response.data;
+  }
+
   // ─── Analytics helpers ─────────────────────────────────────────────────────
 
   /**
@@ -449,6 +495,28 @@ const SUMMARY_FIELDS = ['Client', 'Status', 'OperatingSystemName'];
 function compactComputer(c: any): any {
   const keep = new Set(COMPACT_FIELDS);
   return Object.fromEntries(Object.entries(c).filter(([k]) => keep.has(k)));
+}
+
+const COMPACT_MICROSOFT_UPDATE_FIELDS = [
+  'Id', 'Title', 'KBArticleId', 'UpdateClassification', 'Severity',
+  'IsApproved', 'IsInstalled', 'IsMissing', 'IsFailed',
+  'InstalledDate', 'LastScanDate', 'UpdateId',
+];
+
+function compactMicrosoftUpdate(u: any): any {
+  const keep = new Set(COMPACT_MICROSOFT_UPDATE_FIELDS);
+  return Object.fromEntries(Object.entries(u).filter(([k]) => keep.has(k)));
+}
+
+const COMPACT_THIRD_PARTY_PATCH_FIELDS = [
+  'Id', 'Name', 'Vendor', 'CurrentVersion', 'RecommendedVersion',
+  'IsCompliant', 'IsFailed', 'IsInstalled',
+  'InstalledDate', 'LastScanDate', 'PolicyId',
+];
+
+function compactThirdPartyPatch(p: any): any {
+  const keep = new Set(COMPACT_THIRD_PARTY_PATCH_FIELDS);
+  return Object.fromEntries(Object.entries(p).filter(([k]) => keep.has(k)));
 }
 
 function normaliseOS(raw: string): string {

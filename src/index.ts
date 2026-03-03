@@ -396,6 +396,161 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      // ── Patching ─────────────────────────────────────────────────────────────
+      {
+        name: 'get_patching_stats',
+        description:
+          'Get patching statistics for a specific computer. Returns a summary object with counts of ' +
+          'installed, missing, failed, and approved patches, plus last scan/install times. ' +
+          'First thing to check when diagnosing patching issues on a machine.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get patching stats for',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
+      {
+        name: 'get_microsoft_updates',
+        description:
+          'Get Microsoft/Windows updates for a specific computer. Returns a paginated list of updates ' +
+          'with install status, severity, and classification. Use statusFilter to quickly find ' +
+          'missing, failed, or installed updates without writing raw conditions.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get updates for',
+            },
+            statusFilter: {
+              type: 'string',
+              description:
+                'Quick filter: "missing" (IsMissing=true), "failed" (IsFailed=true), ' +
+                '"installed" (IsInstalled=true). Combines with any condition via AND.',
+            },
+            condition: {
+              type: 'string',
+              description: 'Raw Automate condition for advanced filtering (optional)',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 100)',
+              default: 100,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by (e.g. "InstalledDate desc", "Severity asc")',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
+      {
+        name: 'get_patch_jobs',
+        description:
+          'Get patch jobs (scheduled/completed patching tasks) for a specific computer. ' +
+          'Shows what patching work has been scheduled or run on the machine.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get patch jobs for',
+            },
+            condition: {
+              type: 'string',
+              description: 'Raw Automate condition for filtering (optional)',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 25)',
+              default: 25,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by with optional direction',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
+      {
+        name: 'get_third_party_patches',
+        description:
+          'Get third-party (non-Microsoft) patch status for a specific computer. ' +
+          'Shows applications like Chrome, Adobe, Java etc. and whether they are compliant. ' +
+          'Use statusFilter to quickly find noncompliant, failed, or installed patches.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get third-party patches for',
+            },
+            statusFilter: {
+              type: 'string',
+              description:
+                'Quick filter: "noncompliant" (IsCompliant=false), "failed" (IsFailed=true), ' +
+                '"installed" (IsInstalled=true). Combines with any condition via AND.',
+            },
+            condition: {
+              type: 'string',
+              description: 'Raw Automate condition for advanced filtering (optional)',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 100)',
+              default: 100,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by (e.g. "Name asc", "Vendor asc")',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
+      {
+        name: 'get_effective_patching_policy',
+        description:
+          'Get the effective patching policy applied to a specific computer. ' +
+          'Shows which patching policy is in effect, including approval settings and schedules.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get the patching policy for',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
       // ── Cross-reference ────────────────────────────────────────────────────
       {
         name: 'batch_check_computers',
@@ -569,6 +724,82 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           params.typeFilter as string | undefined,
           params.pageSize as number | undefined
         );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // ── Patching ────────────────────────────────────────────────────────────
+      case 'get_patching_stats': {
+        const result = await automateClient.getPatchingStats(params.computerId as number);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_microsoft_updates': {
+        const conditions: string[] = [];
+        if (params.statusFilter) {
+          const sf = (params.statusFilter as string).toLowerCase();
+          if (sf === 'missing') conditions.push('IsMissing=true');
+          else if (sf === 'failed') conditions.push('IsFailed=true');
+          else if (sf === 'installed') conditions.push('IsInstalled=true');
+        }
+        if (params.condition) {
+          conditions.push(params.condition as string);
+        }
+        const condition = conditions.length > 0 ? conditions.join(' AND ') : undefined;
+        const result = await automateClient.getMicrosoftUpdates(
+          params.computerId as number,
+          condition,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_patch_jobs': {
+        const result = await automateClient.getPatchJobs(
+          params.computerId as number,
+          params.condition,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_third_party_patches': {
+        const conditions: string[] = [];
+        if (params.statusFilter) {
+          const sf = (params.statusFilter as string).toLowerCase();
+          if (sf === 'noncompliant') conditions.push('IsCompliant=false');
+          else if (sf === 'failed') conditions.push('IsFailed=true');
+          else if (sf === 'installed') conditions.push('IsInstalled=true');
+        }
+        if (params.condition) {
+          conditions.push(params.condition as string);
+        }
+        const condition = conditions.length > 0 ? conditions.join(' AND ') : undefined;
+        const result = await automateClient.getThirdPartyPatches(
+          params.computerId as number,
+          condition,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_effective_patching_policy': {
+        const result = await automateClient.getEffectivePatchingPolicy(params.computerId as number);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };
