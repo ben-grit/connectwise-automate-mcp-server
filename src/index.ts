@@ -53,7 +53,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           'Search for computers (managed agents) in ConnectWise Automate. ' +
           'Use the condition parameter to filter results (e.g. ' +
           '"ComputerName=\'DESKTOP-ABC123\'", "OperatingSystemName like \'%Windows 10%\'", "Type=\'Server\'"). ' +
-          'To filter by client/company, use get_computers_by_client instead (ClientId conditions are unreliable). ' +
+          'To filter by client/company, use get_computers_by_client instead. ' +
           'Returns compact records by default (strips large port/IRQ arrays). ' +
           'Supports pagination and sorting.',
         inputSchema: {
@@ -64,7 +64,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description:
                 'Automate filter condition (optional). Examples: ' +
                 '"ComputerName=\'mypc\'", "OperatingSystemName like \'%Server%\'", "Type=\'Server\'". ' +
-                'NOTE: Do not use ClientId here — use the get_computers_by_client tool for client-based filtering.',
+                'To filter by client, use the get_computers_by_client tool instead.',
             },
             pageSize: {
               type: 'number',
@@ -179,6 +179,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
 
+      {
+        name: 'get_computer_drives',
+        description:
+          'Get disk drive information for a computer. Returns drive letter, total size, free space, ' +
+          'file system, SMART status, and whether the drive is SSD. Useful for diagnosing low disk space issues.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get drive information for',
+            },
+            condition: {
+              type: 'string',
+              description: 'Additional Automate filter condition (optional)',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 25)',
+              default: 25,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by with optional direction (e.g. "Letter asc")',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
       // ── Clients ─────────────────────────────────────────────────────────────
       {
         name: 'get_clients',
@@ -231,13 +266,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description:
           'Search for locations in ConnectWise Automate. ' +
           'Locations are sub-groupings within a client. ' +
-          'Use condition to filter, e.g. "ClientId=5".',
+          'Use condition to filter, e.g. "Client.Id=5".',
         inputSchema: {
           type: 'object',
           properties: {
             condition: {
               type: 'string',
-              description: 'Automate filter condition (optional). Example: "ClientId=5"',
+              description: 'Automate filter condition (optional). Example: "Client.Id=5"',
             },
             pageSize: {
               type: 'number',
@@ -551,6 +586,80 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
 
+      // ── History / Diagnostics ────────────────────────────────────────────────
+      {
+        name: 'get_script_history',
+        description:
+          'Get script execution history for a computer. Shows script name, status (Running/Completed), ' +
+          'outcome (Success/Failure/Information), execution time, and diagnostic messages. ' +
+          'Useful for verifying script runs and troubleshooting failures. ' +
+          'Sort by "HistoryDate desc" for most recent first.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get script history for',
+            },
+            condition: {
+              type: 'string',
+              description: 'Automate filter condition (optional). Example: "State=\'Failure\'"',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 25)',
+              default: 25,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by (e.g. "HistoryDate desc")',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
+      {
+        name: 'get_command_history',
+        description:
+          'Get command execution history for a computer. Shows command name, execution date, status, ' +
+          'and output. Useful for checking results of previously executed commands and understanding ' +
+          'what actions have been taken on a machine.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            computerId: {
+              type: 'number',
+              description: 'The computer ID to get command history for',
+            },
+            condition: {
+              type: 'string',
+              description: 'Automate filter condition (optional)',
+            },
+            pageSize: {
+              type: 'number',
+              description: 'Number of results to return (default: 25)',
+              default: 25,
+            },
+            page: {
+              type: 'number',
+              description: 'Page number for pagination (default: 1)',
+              default: 1,
+            },
+            orderBy: {
+              type: 'string',
+              description: 'Field to sort by (e.g. "DateExecuted desc")',
+            },
+          },
+          required: ['computerId'],
+        },
+      },
+
       // ── Cross-reference ────────────────────────────────────────────────────
       {
         name: 'batch_check_computers',
@@ -629,6 +738,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'get_computers_by_client': {
         const result = await automateClient.getComputersByClient(
           params.clientName as string,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_computer_drives': {
+        const result = await automateClient.getComputerDrives(
+          params.computerId as number,
+          params.condition,
           params.pageSize,
           params.page,
           params.orderBy
@@ -800,6 +922,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'get_effective_patching_policy': {
         const result = await automateClient.getEffectivePatchingPolicy(params.computerId as number);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      // ── History / Diagnostics ────────────────────────────────────────────────
+      case 'get_script_history': {
+        const result = await automateClient.getScriptHistory(
+          params.computerId as number,
+          params.condition,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      case 'get_command_history': {
+        const result = await automateClient.getCommandHistory(
+          params.computerId as number,
+          params.condition,
+          params.pageSize,
+          params.page,
+          params.orderBy
+        );
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };

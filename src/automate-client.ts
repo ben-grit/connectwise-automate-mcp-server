@@ -186,7 +186,7 @@ export class AutomateClient {
     }
 
     const client = clientList[0];
-    const data = await this.get('/Computers', `ClientId=${client.Id}`, pageSize, page, orderBy);
+    const data = await this.get('/Computers', `Client.Id=${client.Id}`, pageSize, page, orderBy);
     const computers: any[] = Array.isArray(data) ? data : (data?.items ?? []);
 
     return {
@@ -194,6 +194,18 @@ export class AutomateClient {
       totalReturned: computers.length,
       computers: computers.map(compactComputer),
     };
+  }
+
+  async getComputerDrives(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 25,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    const parts: string[] = [`ComputerId=${computerId}`];
+    if (condition) parts.push(condition);
+    return this.get('/Computers/Drives', parts.join(' AND '), pageSize, page, orderBy);
   }
 
   // ─── Clients ───────────────────────────────────────────────────────────────
@@ -290,6 +302,28 @@ export class AutomateClient {
     return response.data;
   }
 
+  // ─── History / Diagnostics ─────────────────────────────────────────────────
+
+  async getScriptHistory(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 25,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    return this.get(`/Computers/${computerId}/ScriptHistory`, condition, pageSize, page, orderBy);
+  }
+
+  async getCommandHistory(
+    computerId: number,
+    condition?: string,
+    pageSize: number = 25,
+    page: number = 1,
+    orderBy?: string
+  ): Promise<any> {
+    return this.get(`/Computers/${computerId}/CommandHistory`, condition, pageSize, page, orderBy);
+  }
+
   // ─── Analytics helpers ─────────────────────────────────────────────────────
 
   /**
@@ -297,7 +331,7 @@ export class AutomateClient {
    * Fetches all pages internally; returns a compact summary to avoid token overflow.
    */
   async getComputersSummary(clientId?: number): Promise<any> {
-    const condition = clientId !== undefined ? `ClientId=${clientId}` : undefined;
+    const condition = clientId !== undefined ? `Client.Id=${clientId}` : undefined;
     const computers = await this.getAllPages('/Computers', condition);
 
     const byClient: Record<string, number> = {};
@@ -353,7 +387,7 @@ export class AutomateClient {
     const cutoff = new Date(Date.now() - daysOffline * 24 * 60 * 60 * 1000);
 
     const parts: string[] = [`Status='Offline'`];
-    if (clientId !== undefined) parts.push(`ClientId=${clientId}`);
+    if (clientId !== undefined) parts.push(`Client.Id=${clientId}`);
     const condition = parts.join(' AND ');
 
     // Fetch up to 1000 offline computers then filter by date client-side
@@ -448,7 +482,7 @@ export class AutomateClient {
     const cutoff = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
 
     const parts: string[] = [`Status='Offline'`];
-    if (clientId !== undefined) parts.push(`ClientId=${clientId}`);
+    if (clientId !== undefined) parts.push(`Client.Id=${clientId}`);
     if (typeFilter) parts.push(`Type='${typeFilter}'`);
     const condition = parts.join(' AND ');
 
